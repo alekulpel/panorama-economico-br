@@ -1,6 +1,6 @@
-# scripts/coleta_pib.py # Pode renomear para coleta_contas_nacionais.py se preferir
+# scripts/coleta_contas_nacionais.py (ou nome que preferir)
 
-print("🚀 Iniciando script de coleta de dados das Contas Nacionais Trimestrais (SIDRA Tabela 6613)...") # Mensagem atualizada
+print("🚀 Iniciando script de coleta de dados das Contas Nacionais Trimestrais (SIDRA Tabela 6613)...")
 
 import requests
 import pandas as pd
@@ -13,36 +13,24 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # --- Parâmetros da Consulta ---
 TABLE_ID = "6613"
 GEO_LEVEL = "n1"
-GEO_CODE = "1" # Usar '1' para Brasil é mais explícito que 'all' para n1
-VARIABLES = "all" # Buscar todas as variáveis da tabela 6613
+GEO_CODE = "1" # Brasil
+VARIABLES = "all"
 PERIODS = "all"
-CLASSIFICATION = "c11255" # Setores Contas Nacionais Trimestrais
-CATEGORIES = "all" # Pegar todos os setores
-# Variável principal da tabela 6613: Índice de valor adicionado bruto a preços básicos com ajuste sazonal
-# Formato 2 geralmente é o valor do índice
-FORMAT_CODE = "v9319%202" # Display format para a variável principal
+CLASSIFICATION = "c11255"
+CATEGORIES = "all"
+FORMAT_CODE = "v9319%202"
 
-# Monta a URL da API de dados brutos - CORRIGIDO o typo 'hhttps'
 api_url = f"https://apisidra.ibge.gov.br/values/t/{TABLE_ID}/{GEO_LEVEL}/{GEO_CODE}/v/{VARIABLES}/p/{PERIODS}/{CLASSIFICATION}/{CATEGORIES}/d/{FORMAT_CODE}"
 
-# Diretório e nome do arquivo de saída - CORRIGIDO para caminho relativo
-# Assume que o script está em 'scripts/' e os dados vão para 'data/raw/'
 output_dir = "/home/akulpel/Projetos/panorama-economico-br/data/raw"
-output_file = os.path.join(output_dir, "cnt_6613_setorial_dessazonalizado_bruto.csv") # Nome mais específico
+output_file = os.path.join(output_dir, "cnt_6613_setorial_dessazonalizado_bruto.csv")
 
 def coleta_dados_sidra(url, filename):
-    """
-    Coleta dados da API SIDRA e salva em um arquivo CSV.
-    """
     logging.info(f"Iniciando coleta da URL: {url}")
     try:
-        # Usar verify=True é o ideal. Timeout aumentado para 90s.
         response = requests.get(url, verify=True, timeout=90)
-
-        response.raise_for_status() # Verifica erros HTTP (4xx, 5xx)
-
+        response.raise_for_status()
         logging.info(f"✅ Conexão bem-sucedida! Status: {response.status_code}")
-
         dados_json = response.json()
 
         if not dados_json or len(dados_json) <= 1:
@@ -60,95 +48,75 @@ def coleta_dados_sidra(url, filename):
         logging.info(f"📊 DataFrame criado com {df.shape[0]} linhas e {df.shape[1]} colunas.")
         logging.info(f"Colunas originais: {df.columns.tolist()}")
 
-        # --- Limpeza Básica (AJUSTADA para Tabela 6613 - Trimestral, Contas Nacionais) ---
+        # --- Limpeza Básica (AJUSTADA para incluir todas as colunas identificadas) ---
         rename_map = {
-            # Nomes comuns em tabelas trimestrais das Contas Nacionais (verifique a saída real!)
+            'Nível Territorial (Código)': 'nivel_territorial_cod', # Adicionado
+            'Nível Territorial': 'nivel_territorial_nome',     # Adicionado
+            'Unidade de Medida (Código)': 'unidade_medida_cod', # Adicionado
+            'Unidade de Medida': 'unidade_medida_nome',      # Adicionado
             'Valor': 'valor',
-            'Trimestre (Código)': 'trimestre_codigo', # Ex: 202301 (Q1 2023), 202304 (Q4 2023)
-            'Trimestre': 'trimestre_nome',          # Ex: '1º trimestre 2023'
-            'Brasil (Código)': 'geo_cod',
-            'Brasil': 'geo_nome',
-            'Setores e subsetores (Código)': 'setor_cod', # Da classificação C11255
+            'Trimestre (Código)': 'trimestre_codigo',
+            'Trimestre': 'trimestre_nome',
+            'Brasil (Código)': 'geo_cod', # Confirmado que existe
+            'Brasil': 'geo_nome',       # Confirmado que existe
+            'Setores e subsetores (Código)': 'setor_cod',
             'Setores e subsetores': 'setor_nome',
-            'Variável (Código)': 'variavel_cod', # Se buscar v=all, terá essa coluna
+            'Variável (Código)': 'variavel_cod',
             'Variável': 'variavel_nome'
-            # Adicione/remova/ajuste conforme as colunas retornadas pela API para T=6613, V=all
         }
-        # Renomeia apenas as colunas que existem no DataFrame
         df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns}, inplace=True)
         logging.info(f"Colunas após renomear: {df.columns.tolist()}")
 
-
-        # Converter 'valor' para numérico, tratando possíveis não-números
+        # Converter 'valor' para numérico
         if 'valor' in df.columns:
-            # Substitui '...' ou outros marcadores por NaN antes de converter
             df['valor'] = df['valor'].replace({'...': pd.NA, '-': pd.NA, 'X': pd.NA}, regex=False)
             df['valor'] = pd.to_numeric(df['valor'], errors='coerce')
-            logging.info("Coluna 'valor' convertida para numérico (erros viram NaN).")
+            logging.info("Coluna 'valor' convertida para numérico.")
 
-
-        # Tratar período trimestral (Ex: '202301' -> Q1 2023)
+        # Tratar período trimestral
         if 'trimestre_codigo' in df.columns:
             try:
-                # Extrai ano e trimestre do formato YYYYQQ
                 df['ano'] = df['trimestre_codigo'].str[:4].astype(int)
                 df['trimestre_num'] = df['trimestre_codigo'].str[4:].astype(int)
-
-                # Cria um objeto Period do Pandas (representa o trimestre)
-                # Q1='01', Q2='02', Q3='03', Q4='04'
                 df['periodo_trimestral'] = pd.PeriodIndex(year=df['ano'], quarter=df['trimestre_num'], freq='Q')
+                logging.info("Colunas 'ano', 'trimestre_num', 'periodo_trimestral' criadas.")
 
-                # Opcional: Criar uma data de início ou fim do trimestre se preferir Datetime
-                # df['data_inicio_trimestre'] = df['periodo_trimestral'].dt.start_time
-                # df['data_fim_trimestre'] = df['periodo_trimestre'].dt.end_time
-
-                logging.info("Coluna 'periodo_trimestral' (Pandas Period) criada a partir de 'trimestre_codigo'.")
-                # Remove colunas auxiliares se não precisar mais delas
-                # df.drop(columns=['ano', 'trimestre_num'], inplace=True)
+                # --- Opcional: Remover colunas redundantes ---
+                # Após criar 'periodo_trimestral', as colunas usadas para criá-la
+                # podem não ser mais necessárias para a análise.
+                cols_to_drop = ['trimestre_codigo', 'trimestre_nome', 'ano', 'trimestre_num']
+                # Remove apenas as colunas que existem no DataFrame
+                cols_existentes_para_dropar = [col for col in cols_to_drop if col in df.columns]
+                if cols_existentes_para_dropar:
+                     df.drop(columns=cols_existentes_para_dropar, inplace=True)
+                     logging.info(f"Colunas redundantes removidas: {cols_existentes_para_dropar}")
 
             except Exception as e:
-                logging.warning(f"Não foi possível converter 'trimestre_codigo' para período trimestral: {e}")
+                logging.warning(f"Não foi possível converter 'trimestre_codigo' ou remover colunas: {e}")
 
 
         # Garantir que o diretório de saída exista
-        os.makedirs(output_dir, exist_ok=True) # Usando output_dir relativo
-
-        # Salvar em CSV
-        df.to_csv(output_file, index=False, encoding='utf-8') # Usando output_file com caminho relativo
-        logging.info(f"✅ Dados brutos salvos em: {output_file}")
+        os.makedirs(output_dir, exist_ok=True)
+        df.to_csv(output_file, index=False, encoding='utf-8')
+        logging.info(f"✅ Dados brutos (com limpeza básica) salvos em: {output_file}")
 
     except requests.exceptions.SSLError as e:
-         logging.error(f"❌ Erro de SSL: {e}. Verifique a cadeia de certificados do seu sistema ou tente usar 'verify=False' (não recomendado para produção).")
-         # print("\n--- TENTANDO NOVAMENTE COM verify=False ---")
-         # # Código para tentar novamente com verify=False poderia ser adicionado aqui
-         # try:
-         #     response = requests.get(url, verify=False, timeout=90)
-         #     # ... repetir lógica de processamento ...
-         # except Exception as e_retry:
-         #     logging.error(f"❌ Erro mesmo com verify=False: {e_retry}", exc_info=True)
-
+         logging.error(f"❌ Erro de SSL: {e}. Verifique certificados ou tente 'verify=False'.")
     except requests.exceptions.RequestException as e:
         logging.error(f"❌ Erro de conexão com a API: {e}")
-    except ValueError as e: # Erro ao decodificar JSON
-        # Tenta pegar o response mesmo fora do try principal (pode falhar se o erro foi antes)
-        response_text = "N/A"
-        try:
-            response_text = response.text[:500]
-        except NameError:
-             pass # response não foi definido
+    except ValueError as e:
+        response_text = "N/A (response não definido)"
+        try: response_text = response.text[:500]
+        except NameError: pass
         logging.error(f"❌ Erro ao processar JSON da API: {e} - Conteúdo inicial: {response_text}")
     except Exception as e:
-        logging.error(f"❌ Erro inesperado durante a coleta: {e}", exc_info=True) # Log completo do erro
+        logging.error(f"❌ Erro inesperado durante a coleta: {e}", exc_info=True)
 
 # --- Execução ---
 if __name__ == "__main__":
-    # Teste a URL no navegador primeiro!
     print(f"URL da API que será usada:\n{api_url}")
-
-    # Verifica se o diretório de saída existe antes de pausar (opcional)
-    print(f"Os dados serão salvos em: {os.path.abspath(output_file)}") # Mostra caminho absoluto
-
-    # input("Pressione Enter para continuar após verificar a URL e o caminho...") # Pausa opcional
+    print(f"Os dados serão salvos em: {os.path.abspath(output_file)}")
+    # input("Pressione Enter para continuar...") # Pausa opcional
 
     coleta_dados_sidra(api_url, output_file)
     print(f"✅ Script de coleta da SIDRA ({os.path.basename(__file__)}) finalizado.")
