@@ -16,10 +16,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # https://www3.bcb.gov.br/sgspub/localizarseries/localizarSeries.do?method=prepararTelaLocalizarSeries
 CODIGOS_BCB = {
     # Nome descritivo: código SGS
-    #'selic_meta': 432,        # Taxa de juros - Meta Selic definida pelo Copom (% a.a.) - Diária (mas muda menos freq.)
-    #'selic_diaria': 11,       # Taxa de juros - Selic acumulada no mês (% a.m.) - Diária - CUIDADO: essa é mensal acumulada, talvez 1178 seja melhor (efetiva diária)
-    #'selic_efetiva_diaria': 1178, # Taxa de juros - Selic efetiva (% a.a.) - Base 252 - Diária
-    #'ipca_mensal': 433,       # Índice nacional de preços ao consumidor-amplo (IPCA) - Var. % mensal - Mensal
+    'selic_meta': 432,        # Taxa de juros - Meta Selic definida pelo Copom (% a.a.) - Diária (mas muda menos freq.)
+    'selic_diaria': 11,       # Taxa de juros - Selic acumulada no mês (% a.m.) - Diária - CUIDADO: essa é mensal acumulada, talvez 1178 seja melhor (efetiva diária)
+    'selic_efetiva_diaria': 1178, # Taxa de juros - Selic efetiva (% a.a.) - Base 252 - Diária
+    'ipca_mensal': 433,       # Índice nacional de preços ao consumidor-amplo (IPCA) - Var. % mensal - Mensal
     'cambio_usd_venda': 1,    # Taxa de Câmbio - Livre - Dólar americano (venda) - Boletim diário PTAX - Diária
     # Adicione outros códigos se precisar (ex: IGP-M, Produção Industrial do IBGE via BCB, etc.)
 }
